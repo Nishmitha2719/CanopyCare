@@ -1,0 +1,1 @@
+"""Optional spatial exposure summaries."""

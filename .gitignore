@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+data/raw/*
+data/interim/*
+data/processed/*
+reports/*
+!**/.gitkeep
+.env
+
+!data/raw/study_area.geojson

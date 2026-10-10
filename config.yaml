@@ -1,0 +1,238 @@
+# All scientific choices are explicit. This is an illustrative research configuration.
+seed: 42
+study_area:
+  name: illustrative_kodagu_wayanad
+  bbox_wgs84: [75.65, 11.60, 76.20, 12.35] # west, south, east, north; NOT administrative boundaries
+  shapefile: data/raw/study_area.geojson # supplied illustrative rectangle; replace with authoritative AOI
+  crs: EPSG:32643 # UTM 43N; metre units
+grid:
+  cell_size_m: 1000
+  boundary_policy: intersect_full_cells # keep full squares intersecting AOI, including edge area outside it
+time:
+  prediction_start_year: 2020 # T is the inclusive observation cutoff; prediction starts Jan 1, T+1
+  horizon_years: 4
+  feature_dataset_end_year: 2020
+  label_dataset_end_year: 2024
+  historical_loss_window_years: 5
+  temporal_mode: retrospective_observation_cutoff # NOT a claim of operational availability on Dec 31, T
+earth_engine:
+  project: canopycare # Earth Engine-enabled Google Cloud project ID; EE_PROJECT can override
+  request_timeout_ms: 60000
+  feature_asset: UMD/hansen/global_forest_change_2020_v1_8
+  label_asset: UMD/hansen/global_forest_change_2024_v1_12
+  elevation_asset: USGS/SRTMGL1_003
+  elevation_source_end_year: 2010 # conservative bound for void-fill auxiliary observations
+  scale_m: 30
+  tile_scale: 4
+  chunk_cells: 100
+forest:
+  canopy_threshold_pct: 30
+  min_forest_fraction: 0.10
+  min_valid_fraction: 0.95
+  loss_threshold_fraction: 0.01 # positive if future loss >= 1% of forest remaining at T
+risk:
+  status: unvalidated_placeholders
+  medium_min: 0.30 # low < 0.30; medium [0.30, 0.70); high >= 0.70
+  high_min: 0.70 # score categories, not calibrated probabilities
+features:
+  columns: [forest_fraction, historical_loss_fraction, elevation_m, slope_deg]
+  ranges:
+    forest_fraction: [0, 1]
+    historical_loss_fraction: [0, 1]
+    elevation_m: [-500, 9000]
+    slope_deg: [0, 90]
+validation:
+  n_splits: 4
+  block_size_m: 5000
+  buffer_m: 1000 # exclude training centroids within this distance of validation centroids
+  probability_threshold: 0.5 # fixed before evaluation; do not tune on held-out folds
+model:
+  kind: logistic # logistic | xgboost | gnn
+  logistic_c: 1.0
+  logistic_max_iter: 2000
+  xgboost_estimators: 150
+  xgboost_max_depth: 3
+  xgboost_learning_rate: 0.05
+  graph_hidden_channels: 32
+  graph_epochs: 100
+  graph_learning_rate: 0.01
+  graph_weight_decay: 0.0001
+  graph_radius_m: 1001 # rook adjacency for a square grid; explicit self-loops inside GCN
+explanations:
+  permutation_repeats: 5
+  shap_max_cells: 100
+  integrated_gradients_steps: 64
+carbon:
+  biomass_mg_per_ha: 120 # illustrative above-ground dry biomass; not measured biomass
+  carbon_fraction: 0.47
+  co2_to_c_ratio: 3.6666666666666665
+  scenario_loss_fraction: 0.10 # hypothetical fraction lost, NOT inferred from binary risk
+exposure:
+  radius_m: 2000
+agent:
+  ollama_url: http://localhost:11434
+  ollama_model: null # installed local tool-capable model
+  timeout_seconds: 120
+  max_tool_rounds: 5
+  max_tool_calls_per_round: 10
+  max_priority_cells: 10
+demo:
+  rows: 30
+  cols: 30
+  origin_easting_m: 600000
+  origin_northing_m: 1300000
+  forest_min: 0.15
+  forest_max: 0.95
+  history_beta_a: 1.2
+  history_beta_b: 12
+  elevation_base_m: 300
+  elevation_range_m: 1400
+  slope_max_deg: 45
+  label_intercept: -3.1
+  history_coefficient: 7.0
+  forest_coefficient: 1.0
+  spatial_coefficient: 0.6
+  positive_loss_min: 0.02
+  positive_loss_max: 0.20
+paths:
+  dataset: data/processed/cells.csv
+  provenance: data/processed/provenance.json
+  grid: data/interim/grid.geojson
+  reports: reports
+
+collection:
+  years: [2019, 2020, 2021, 2022, 2023, 2024]
+  raw_directory: data/raw/collection
+  nodata: -9999
+  grid_origin_snap_m: 3000 # common anchor for 20,30,100,1000 m rasters
+  tile_pixels: 1024 # 7 float32 bands ~28 MiB, below GEE's 32 MiB limit
+  download_workers: 4
+  attempts: 3
+  retry_backoff_seconds: 3
+  http_timeout_seconds: 240
+  ee_deadline_ms: 240000
+  drive_folder: CanopyCare_raw
+  max_export_pixels: 1000000000000
+  sentinel2:
+    asset: COPERNICUS/S2_SR_HARMONIZED
+    start_month: 1
+    end_month_exclusive: 5 # January-April in the named year; validate locally
+    bands: [B2, B3, B4, B8, B11, B12]
+    scl_keep: [4, 5, 6, 7] # vegetation, bare soil, water, unclassified; remaining cloud risk
+    reflectance_multiplier: 0.0001
+    max_scene_cloud_pct: 80
+    export_scale_m: 20
+  hansen:
+    asset: UMD/hansen/global_forest_change_2025_v1_13
+    end_year: 2025
+    bands: [treecover2000, loss, lossyear, gain, datamask]
+    export_scale_m: 30
+  dem:
+    asset: USGS/SRTMGL1_003
+    export_scale_m: 30
+  chirps:
+    asset: UCSB-CHG/CHIRPS/DAILY
+    export_scale_m: 1000 # nearest-neighbor; native information remains ~5.6 km
+  era5:
+    asset: ECMWF/ERA5_LAND/MONTHLY_AGGR
+    export_scale_m: 1000 # nearest-neighbor; native information remains ~11 km
+    temperature_band: temperature_2m
+    moisture_band: volumetric_soil_water_layer_1 # 0-7 cm, m3/m3
+    kelvin_offset: 273.15
+  biomass:
+    asset: LARSE/GEDI/GEDI04_B_002
+    bands: [MU, SE, QF, NS]
+    observation_start: '2019-04-18'
+    observation_end: '2021-08-04'
+    export_scale_m: 1000
+    quality_min: 1 # QF retained; no automatic discard so coverage can be inspected
+  population:
+    asset: WorldPop/GP/100m/pop
+    year: 2020
+    country: IND
+    export_scale_m: 100
+  osm:
+    user_agent: "CanopyCare/0.1 (forest-loss research; Kodagu-Wayanad study; Python requests)"
+    endpoints: [https://overpass-api.de/api/interpreter, https://overpass.kumi.systems/api/interpreter]
+    snapshot: '2020-12-31T23:59:59Z' # historical attic snapshot; fail rather than silently substitute current OSM
+    tile_degrees: 0.25
+    timeout_seconds: 180
+    place_types: [city, town, village, hamlet, isolated_dwelling]
+  mining:
+    url: https://download.pangaea.de/dataset/942325/files/global_mining_polygons_v2.gpkg
+    version: Maus_v2_2022
+    primary_imagery_year: 2019
+  quality:
+    minimum_valid_fraction: 0.01 # detects empty layers, not a scientific quality endorsement
+    preview_max_pixels: 800
+    rgb_max_reflectance: 0.30
+
+networking:
+  overpass_primary: https://maps.mail.ru/osm/tools/overpass/api/interpreter # public global attic endpoint listed by OSM Wiki
+
+preprocessing:
+  input_directory: data/raw/preprocessing
+  output_directory: data/processed/preprocessing
+  report_directory: reports/preprocessing
+  spectral_lookback_years: 4 # T-3..T, inclusive
+  min_aoi_fraction: 0.99 # preserve full 1 km cells; exclude sliver boundary cells
+  min_label_forest_coverage: 1.0 # every observed forest pixel needs a valid future label
+  min_zonal_valid_fraction: 0.80 # pixel-center coverage; leave feature missing below this
+  min_trend_years: 3 # no two-point trend; incomplete early S2 years remain missing
+  min_season_months: 4 # Jan-Apr must have at least one scene in every month
+  denominator_epsilon: 0.000001
+  evi: {gain: 2.5, red_coefficient: 6.0, blue_coefficient: 7.5, offset: 1.0}
+  spectral_ranges: {ndvi: [-1.0, 1.0], evi: [-1.0, 1.0], nbr: [-1.0, 1.0], ndmi: [-1.0, 1.0]}
+  flat_slope_degrees: 1.0 # aspect undefined below this slope
+  circular_resultant_min: 0.05 # ambiguous mean direction is missing below this
+  history_windows_years: [1, 3, 5] # inclusive windows ending at T
+  hansen_masked_lossyear: no_recorded_loss_where_datamask_land
+  history_scale_m: 30
+  dry_months: [1, 2, 3, 4]
+  wet_months: [5, 6, 7, 8, 9, 10, 11, 12] # complement; includes monsoon and post-monsoon
+  anomaly_baseline: inclusive_T_minus_3_to_T # short baseline, not climate normal
+  history_fraction_denominator: valid_land_area
+  target_fraction_denominator: forest_remaining_at_T
+  pixel_inclusion: center # equal-area UTM pixel approximation; no fractional edge weights
+  nearest_distance_origin: cell_centroid
+  nearest_loss_geometry: pixel_center
+  distance_boundary_policy: missing_if_nearest_may_lie_outside_AOI
+  imputation: training_fold_median_with_missing_indicators
+  outlier_iqr_multiplier: 3.0 # flag only; never trim using full-dataset statistics
+  histogram_bins: 30
+  # Optional vetted local rasters require metadata: predictor_allowed=true,
+  # observation_end_year <= T, source, units, and sha256. No unsafe fallback.
+  vetted_biomass:
+    path: data/raw/preprocessing/biomass_cci_2017/biomass_cci_2017.tif
+    metadata: data/raw/preprocessing/biomass_cci_2017/metadata.json
+  vetted_population:
+    path: data/raw/preprocessing/population_ghsl_2015/population_ghsl_2015.tif
+    metadata: data/raw/preprocessing/population_ghsl_2015/approved_metadata.json
+  vetted_mining:
+    path: data/raw/preprocessing/mining_osm_2020/mining_osm_2020.gpkg
+    metadata: data/raw/preprocessing/mining_osm_2020/metadata.json
+
+  biomass_archive:
+    url: https://data.cci.ceda.ac.uk/thredds/dodsC/esacci/biomass/data/agb/maps/2017/v1.0/netcdf/ESACCI-BIOMASS-L4-AGB-MERGED-100m-2017-fv1.0.nc
+    year: 2017
+    observation_end_year: 2019 # conservative bound: product created Oct 2019, observations epoch 2017
+    version: '1.0'
+    band: agb
+    export_scale_m: 100
+    resampling: average
+    padding_pixels: 2
+    timeout_seconds: 240
+    doi: https://doi.org/10.5285/bedc59f37c9545c981a839eb552e4084
+
+  population_archive:
+    asset: JRC/GHSL/P2016/POP_GPW_GLOBE_V1/2015
+    epoch: 2015
+    observation_end_year: 2016 # conservative source-information bound for P2016
+    export_scale_m: 250
+  mining_proxy:
+    tag_key: landuse
+    tag_value: quarry
+    source: OSM historical mapped quarries, not an exhaustive inventory of mines
+
+  village_place_types: [village, hamlet, isolated_dwelling]
+  road_highway_types: [motorway, trunk, primary, secondary, tertiary, unclassified, residential, service, track, living_street, motorway_link, trunk_link, primary_link, secondary_link, tertiary_link, road]

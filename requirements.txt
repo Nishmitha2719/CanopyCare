@@ -1,0 +1,10 @@
+# Python 3.11 setup/baseline environment: pinned direct dependencies.
+# Optional model/UI/geospatial extras remain in pyproject.toml.
+numpy==2.4.6
+pandas==2.3.3
+scipy==1.17.1
+scikit-learn==1.9.1
+PyYAML==6.0.3
+joblib==1.6.0
+pyproj==3.7.1
+earthengine-api==1.5.24
